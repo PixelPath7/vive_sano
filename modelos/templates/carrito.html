@@ -1,0 +1,275 @@
+{% extends 'base.html' %}
+
+{% block contenido %}
+
+<div class="mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0">Tu carrito</h5>
+    <a class="text-decoration-none text-muted" href="{% url 'inicio' %}">Seguir comprando</a>
+  </div>
+
+  {% if carrito_items %}
+  <div class="row g-3">
+    <div class="col-12 col-lg-8">
+      <div class="list-group" id="carritoList">
+        {% for item in carrito_items %}
+        <div class="list-group-item mb-3 p-3" data-producto-id="{{ item.id }}">
+          <div class="row g-2 align-items-center">
+            <div class="col">
+              <div class="d-flex justify-content-between">
+                <div>
+                  <strong class="product-name">{{ item.nombre }}</strong>
+                </div>
+                <div class="text-end">
+                  <div class="text-success fw-bold product-price">${{ item.precio }}</div>
+                  <div class="small text-muted">x <span class="product-cantidad">{{ item.cantidad }}</span></div>
+                  <a class="text-danger small d-block mt-1 remove-link" href="#" data-id="{{ item.id }}">Quitar del Carrito</a>
+                </div>
+              </div>
+
+              {% if item.descripcion %}
+              <p class="small text-muted mt-2 mb-0 description-truncate">{{ item.descripcion }}</p>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <aside class="col-12 col-lg-4">
+      <div class="card p-3">
+        <h6 class="mb-3">Resumen del pedido</h6>
+        <div class="d-flex justify-content-between mb-2">
+          <div class="text-muted">Productos</div>
+          <div><strong id="totalProductos">{{ total_productos }}</strong></div>
+        </div>
+        <div class="d-flex justify-content-between mb-3">
+          <div class="text-muted">Subtotal</div>
+          <div><strong id="totalPrecio">${{ total_precio }}</strong></div>
+        </div>
+
+        <form id="formSolicitar" method="post">
+          {% csrf_token %}
+          <input type="hidden" name="carrito" id="carrito_hidden" value='{{ carrito_raw|escapejs }}'>
+          <button type="submit" class="btn btn-success w-100 mb-2">
+            <span class="material-symbols-outlined align-middle">shopping_cart</span>
+            Solicitar pedido
+          </button>
+        </form>
+
+        <a href="{% url 'inicio' %}" class="btn btn-outline-secondary w-100 mb-2">Volver a la tienda</a>
+        <button class="btn btn-outline-secondary w-100" id="btnNuevoCarrito">Nuevo Carrito</button>
+      </div>
+    </aside>
+  </div>
+
+  {% else %}
+  <div class="text-center py-6">
+    <p class="text-muted">Tu carrito está vacío.</p>
+    <a href="{% url 'inicio' %}" class="btn btn-success">Ir a la tienda</a>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+  // Clave de localStorage
+  var STORAGE_KEY = "carrito"
+
+  // Estado simple en memoria
+  var CARRITO = []
+
+  // Inicializa CARRITO desde (1) carrito_raw enviado por la vista o (2) localStorage
+  function inicializar_carrito() {
+    try {
+      // Si el template pasó carrito_raw, ya está en el hidden input como JSON string
+      var hidden = document.getElementById("carrito_hidden")
+      if (hidden && hidden.value) {
+        try {
+          var parsed = JSON.parse(hidden.value)
+          // normalizar: si es lista de objetos o lista de ids
+          CARRITO = normalizar(parsed)
+          persistir()
+          renderizar_ui()
+          return
+        } catch (e) {
+          // ignore parse error y fallback a localStorage
+        }
+      }
+
+      var raw = localStorage.getItem(STORAGE_KEY)
+      if (raw) {
+        CARRITO = JSON.parse(raw)
+      } else {
+        CARRITO = []
+      }
+    } catch (err) {
+      CARRITO = []
+    }
+    renderizar_ui()
+  }
+
+  // Normaliza formatos entrantes a lista de objetos {id, nombre, precio, cantidad, descripcion}
+  function normalizar(data) {
+    var out = []
+    if (!data) return out
+
+    // si es lista de enteros o strings: convertir a objetos con cantidad 1
+    if (Array.isArray(data)) {
+      if (data.length === 0) return out
+      // detecta si primer elemento es primitivo
+      var first = data[0]
+      if (typeof first === "number" || typeof first === "string") {
+        for (var i = 0; i < data.length; i++) {
+          var id = data[i]
+          out.push({ id: parseInt(id), cantidad: 1 })
+        }
+        return out
+      }
+      // si son objetos ya
+      for (var i = 0; i < data.length; i++) {
+        var obj = data[i]
+        if (typeof obj === "object" && obj !== null) {
+          var idv = obj.id || obj.pk || obj.producto || obj.producto_id
+          var cantidad = obj.cantidad || obj.qty || obj.cantidad || 1
+          var nombre = obj.nombre || obj.nombre_producto || ""
+          var precio = obj.precio != null ? Number(obj.precio) : 0
+          var descripcion = obj.descripcion || ""
+          out.push({ id: parseInt(idv), cantidad: parseInt(cantidad), nombre: nombre, precio: precio, descripcion: descripcion })
+        }
+      }
+    }
+    return out
+  }
+
+  // Guardar en localStorage
+  function persistir() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(CARRITO))
+      // también actualizar hidden para envío
+      var hidden = document.getElementById("carrito_hidden")
+      if (hidden) hidden.value = JSON.stringify(CARRITO)
+    } catch (e) {
+      console.error("No se pudo persistir carrito", e)
+    }
+  }
+
+  // Render simple de la UI: actualizar lista, totales y enlazar botones quitar
+  function renderizar_ui() {
+    // actualizar totales
+    var totalItems = 0
+    var totalPrecio = 0
+    for (var i = 0; i < CARRITO.length; i++) {
+      var it = CARRITO[i]
+      totalItems += (it.cantidad || 1)
+      totalPrecio += (Number(it.precio) || 0) * (it.cantidad || 1)
+    }
+    var elTotalProd = document.getElementById("totalProductos")
+    var elTotalPrecio = document.getElementById("totalPrecio")
+    if (elTotalProd) elTotalProd.textContent = totalItems
+    if (elTotalPrecio) elTotalPrecio.textContent = "$" + formatNumber(totalPrecio)
+
+    // actualizar lista visible si existe (basado en HTML renderizado por servidor)
+    var list = document.getElementById("carritoList")
+    if (!list) return
+
+    // Actualizar cada fila existente por data-producto-id
+    var rows = list.querySelectorAll('[data-producto-id]')
+    for (var r = 0; r < rows.length; r++) {
+      var row = rows[r]
+      var pid = parseInt(row.getAttribute("data-producto-id"))
+      // buscar en CARRITO
+      var found = null
+      for (var j = 0; j < CARRITO.length; j++) {
+        if (CARRITO[j].id === pid) { found = CARRITO[j]; break }
+      }
+      // si encontrado actualizar cantidad y subtotal; si no encontrado ocultar fila
+      var qtyEl = row.querySelector('.product-cantidad')
+      var priceEl = row.querySelector('.product-price')
+      var nameEl = row.querySelector('.product-name')
+      if (found) {
+        if (qtyEl) qtyEl.textContent = (found.cantidad || 1)
+        if (priceEl) priceEl.textContent = "$" + formatNumber(found.precio)
+        if (nameEl && found.nombre) nameEl.textContent = found.nombre
+        row.style.display = ""
+      } else {
+        row.style.display = "none"
+      }
+    }
+  }
+
+  // Formato simple de número con separador de miles
+  function formatNumber(n) {
+    n = Math.round(n)
+    return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ".")
+  }
+
+  // Quitar un ítem (decrementa cantidad o lo elimina)
+  function quitar_por_id(id) {
+    for (var i = 0; i < CARRITO.length; i++) {
+      if (CARRITO[i].id === id) {
+        if ((CARRITO[i].cantidad || 1) > 1) {
+          CARRITO[i].cantidad = CARRITO[i].cantidad - 1
+        } else {
+          CARRITO.splice(i, 1)
+        }
+        break
+      }
+    }
+    persistir()
+    renderizar_ui()
+  }
+
+  // Nuevo carrito: limpiar storage y UI
+  function nuevo_carrito_local() {
+    CARRITO = []
+    persistir()
+    renderizar_ui()
+  }
+
+  // Enlazadores de eventos (delegación para enlaces quitar)
+  document.addEventListener("DOMContentLoaded", function () {
+    inicializar_carrito()
+
+    // Delegación para quitar: enlaces con clase .remove-link y data-id
+    var list = document.getElementById("carritoList")
+    if (list) {
+      list.addEventListener("click", function (e) {
+        var target = e.target
+        // subir hasta el enlace si hace falta
+        while (target && target !== list) {
+          if (target.classList && target.classList.contains('remove-link')) {
+            e.preventDefault()
+            var id = parseInt(target.getAttribute('data-id'))
+            if (!isNaN(id)) quitar_por_id(id)
+            return
+          }
+          target = target.parentNode
+        }
+      })
+    }
+
+    // Botón nuevo carrito
+    var btnNuevo = document.getElementById("btnNuevoCarrito")
+    if (btnNuevo) {
+      btnNuevo.addEventListener("click", function (e) {
+        e.preventDefault()
+        if (confirm("¿Deseas limpiar el carrito?")) {
+          nuevo_carrito_local()
+        }
+      })
+    }
+
+    // Al enviar el formulario nos aseguramos de dejar el hidden actualizado
+    var form = document.getElementById("formSolicitar")
+    if (form) {
+      form.addEventListener("submit", function () {
+        var hidden = document.getElementById("carrito_hidden")
+        if (hidden) hidden.value = JSON.stringify(CARRITO)
+        // el form seguirá y Django recibirá el campo 'carrito' por POST
+      })
+    }
+  })
+</script>
+
+{% endblock %}

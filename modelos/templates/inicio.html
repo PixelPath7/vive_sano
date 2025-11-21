@@ -1,0 +1,189 @@
+{% extends 'base.html' %}
+
+
+{% block contenido %}
+
+<!-- Ejemplo de rejilla de productos -->
+<div class="mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0">Productos destacados</h5>
+    <!-- <a class="text-decoration-none text-muted" href="#">Ver todo</a> -->
+  </div>
+
+  {% for producto in productos %}
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-md-4 col-lg-3">
+      <div class="card card-product h-100">
+        <img src="{{ producto.imagen.url }}" class="product-img" style="image-rendering: auto;"
+          alt="Imagen de {{ producto.nombre }}">
+        <div class="p-3 d-flex flex-column">
+          <div class="mb-2">
+            <div class="d-flex justify-content-between align-items-start">
+              <strong class="d-block">{{ producto.nombre }}</strong>
+              <span class="text-success ms-2">${{ producto.precio }}</span>
+            </div>
+
+            <!-- Descripción truncada -->
+            <p class="text-muted small mb-1 description-truncate">
+              {{ producto.descripcion }}
+            </p>
+
+
+          </div>
+
+          <div class="mt-auto d-flex justify-content-between align-items-center">
+            <small class="text-muted">{{ producto.categoria }}</small>
+            <a class="btn btn-sm btn-outline-success"
+              onclick='agregar_al_carrito({ "id": {{ producto.id }}, "nombre": "{{ producto.nombre|escapejs }}", "precio": {{ producto.precio }} })'><span
+                class="material-symbols-outlined">add_shopping_cart</span></a>
+          </div>
+
+          <!-- Collapse con la descripción completa -->
+          <div class="collapse mt-2" id="desc-{{ producto.id }}">
+            <div class="card card-body p-2 small">
+              {{ producto.descripcion }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% endfor %}
+
+  <!-- Floating cart: fuera del loop -->
+  <form id="formCarrito" method="post">
+    {% csrf_token %}
+    <a href="#" id="floatingCart" class="floating-cart d-flex align-items-center gap-2" style="display:none;">
+      <span class="material-symbols-outlined">shopping_cart</span>
+      <div>
+        <input id="carrito_post" name="carrito" value="" hidden>
+        <input name="accion" value="ver_carrito" hidden>
+        <div id="floatingCartTitle" style="font-weight:700">Carrito</div>
+        <small id="floatingCartSummary" style="opacity:.9">0 items • $0</small>
+      </div>
+    </a>
+  </form>
+
+  <script>
+    // Estado del carrito: array de items {id, nombre, precio, cantidad}
+    let CARRITO = []
+    let SUMA = 0
+
+    function detectar_carrito() {
+      try {
+        const raw = localStorage.getItem("carrito")
+        CARRITO = raw ? JSON.parse(raw) : []
+      } catch (err) {
+        console.error("Error leyendo carrito desde localStorage:", err)
+        CARRITO = []
+      }
+      calcular_suma()
+      modificar_html()
+      render_floating_cart()
+    }
+
+    function modificar_html() {
+      // Placeholder: actualiza otras partes de la UI si las tienes
+      console.log("Carrito actual:", CARRITO)
+      console.log("Total:", SUMA)
+    }
+
+    function agregar_al_carrito(info_producto) {
+      if (!info_producto || typeof info_producto.id === "undefined") return
+
+      const idx = CARRITO.findIndex(item => item.id === info_producto.id)
+      if (idx === -1) {
+        CARRITO.push({
+          id: info_producto.id,
+          nombre: info_producto.nombre || "",
+          precio: Number(info_producto.precio) || 0,
+          cantidad: 1
+        })
+      } else {
+        CARRITO[idx].cantidad += 1
+      }
+      persistir_carrito()
+      calcular_suma()
+      modificar_html()
+      render_floating_cart()
+    }
+
+    function quitar_carrito(info_producto) {
+      if (!info_producto || typeof info_producto.id === "undefined") return
+
+      const idx = CARRITO.findIndex(item => item.id === info_producto.id)
+      if (idx === -1) return
+
+      if (CARRITO[idx].cantidad > 1) {
+        CARRITO[idx].cantidad -= 1
+      } else {
+        CARRITO.splice(idx, 1)
+      }
+      persistir_carrito()
+      calcular_suma()
+      modificar_html()
+      render_floating_cart()
+    }
+
+    function persistir_carrito() {
+      try {
+        localStorage.setItem("carrito", JSON.stringify(CARRITO))
+      } catch (err) {
+        console.error("No se pudo guardar el carrito:", err)
+      }
+    }
+
+    // El map en javascript lol xd
+    function calcular_suma() {
+      SUMA = CARRITO.reduce((acc, item) => acc + (Number(item.precio) || 0) * (item.cantidad || 1), 0)
+    }
+
+    // Renderiza y muestra/oculta el carrito flotante con resumen
+    function render_floating_cart() {
+      const el = document.getElementById("floatingCart")
+      const summary = document.getElementById("floatingCartSummary")
+      if (!el || !summary) return
+
+      const totalItems = CARRITO.reduce((acc, item) => acc + (item.cantidad || 0), 0)
+      summary.textContent = `${totalItems} item${totalItems !== 1 ? "s" : ""} • $${SUMA.toLocaleString()}`
+      // mostrar solo si hay items
+      el.style.display = totalItems > 0 ? "flex" : "none"
+    }
+
+    // Abre una vista simple del carrito (puedes reemplazar por modal)
+    document.addEventListener("DOMContentLoaded", function () {
+      detectar_carrito() // carga inicial desde localStorage
+
+      var el = document.getElementById("floatingCart")
+      var form = document.getElementById("formCarrito")
+      var input = document.getElementById("carrito_post")
+
+      if (el && form && input) {
+        el.addEventListener("click", function (e) {
+          e.preventDefault()
+
+          // Si carrito vacío no enviamos
+          if (!CARRITO || CARRITO.length === 0) {
+            alert("Tu carrito está vacío.")
+            return
+          }
+
+
+
+          // Rellenar input oculto: como JSON
+          try {
+            input.value = JSON.stringify(CARRITO)
+          } catch (err) {
+            // fallback a CSV
+            input.value = ids.join(",")
+          }
+
+          // Enviar formulario (POST) hacia la vista indicada en action
+          form.submit()
+        })
+      }
+    })
+  </script>
+
+{% endblock %}
