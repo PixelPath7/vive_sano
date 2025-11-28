@@ -35,7 +35,6 @@ urlpatterns = [
     path("atencion/pedido/<int:pedido_id>/notificar-cliente/", modelos_vw.enviar_notificacion_cliente, name="notificar_cliente"),
     path('atencion/notificacion/<int:notificacion_id>/responder/', modelos_vw.responder_notificacion, name='responder_notificacion'),
     path("mis-pedidos/", modelos_vw.ver_pedidos_cliente, name="mis_pedidos"),
-
 ]
 
 if settings.DEBUG:

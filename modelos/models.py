@@ -2,6 +2,8 @@ from django.db import models
 from django.contrib.auth.models import User, Group
 from decimal import Decimal
 from django.core.validators import MinValueValidator
+from django.core.exceptions import ValidationError
+from django.utils import timezone #Kevin
 
 # Create your models here.
 
@@ -20,10 +22,7 @@ class Producto(models.Model):
         null = True
     )
 
-    precio = models.DecimalField(
-        max_digits = 10,
-        decimal_places = 2
-    ) 
+    precio = models.IntegerField() 
 
     stock = models.IntegerField(
         default = 0
@@ -42,6 +41,15 @@ class Producto(models.Model):
 
     def __str__(self):
         return self.nombre
+    
+    def clean(self): #Kevin
+        super().clean()
+        if len(self.nombre.strip()) < 3:
+            raise ValidationError({'nombre': "El nombre debe tener al menos 3 caracteres."})
+        if self.precio is not None and self.precio <= 0:
+            raise ValidationError({'precio': "El precio debe ser un numero entero mayor que cero."})
+        if self.stock < 0:
+            raise ValidationError({'stock': "El stock no puede ser negativo."})
 
 
 class Pedido(models.Model):
@@ -65,6 +73,13 @@ class Pedido(models.Model):
 
     def __str__(self):
         return f"Pedido #{self.id} - {self.cliente or 'Cliente desconocido'} - {self.estado}"
+    
+    def clean(self): #Kevin
+        if not self.cliente:
+            raise ValidationError({'cliente': "Debe asignarse un cliente al pedido."})
+        if self.tiempo_despacho and self.tiempo_despacho < self.fecha_creacion:
+            raise ValidationError({'tiempo_despacho': "La fecha de despacho no puede ser anterior a la creación del pedido."})
+
 
 
 class DetallePedido(models.Model):
@@ -134,6 +149,12 @@ class DetallePedido(models.Model):
             "subtotal": float(self.subtotal),
             "creado": self.creado,
         }
+    def clean(self): #Kevin
+        if self.precio_unitario <= 0:
+            raise ValidationError({'precio_unitario': "El precio unitario debe ser mayor que cero."})
+        if self.producto and self.cantidad > self.producto.stock:
+            raise ValidationError({'cantidad': f"Solo hay {self.producto.stock} unidades disponibles de {self.producto.nombre}."})
+
 
 
 class Notificacion(models.Model):
@@ -199,6 +220,13 @@ class Notificacion(models.Model):
 
     def __str__(self):
         return f"Notificación #{self.id} ({self.tipo}) -> Pedido {self.pedido_id}"
+    
+    def clean(self): #Kevin
+        if len(self.mensaje.strip()) < 5:
+            raise ValidationError({'mensaje': "El mensaje debe tener al menos 5 caracteres."})
+        if self.estado_respuesta != 'PENDIENTE' and not self.respuesta_texto:
+            raise ValidationError({'respuesta_texto': "Debe ingresar una respuesta si el estado no es 'Pendiente'."})
+
 
 
 class Cliente(models.Model):
@@ -234,4 +262,11 @@ class Cliente(models.Model):
 
     def __str__(self):
         return f"{self.nombre} {self.apellido}"
-
+    
+    def clean(self): #Kevin
+        if len(self.nombre.strip()) < 2:
+            raise ValidationError({'nombre': "El nombre debe tener al menos 2 caracteres."})
+        if len(self.apellido.strip()) < 2:
+            raise ValidationError({'apellido': "El apellido debe tener al menos 2 caracteres."})
+        if self.telefono and not self.telefono.isdigit():
+            raise ValidationError({'telefono': "El teléfono debe contener solo números."})

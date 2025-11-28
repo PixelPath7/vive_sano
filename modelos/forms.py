@@ -73,6 +73,12 @@ class FiltrarPedidosForm(forms.Form):
     estado = forms.ChoiceField(choices=ESTADO_CHOICES)
 
 class NotificacionForm(forms.ModelForm):
+    def clean_mensaje(self):
+        msg = self.cleaned_data.get("mensaje", "")
+        if len(msg) < 5:
+            raise forms.ValidationError("El mensaje debe contener al menos 5 caracteres.")
+        return msg
+
     class Meta:
         model = Notificacion
         fields = ['tipo', 'mensaje', 'destinatario']
